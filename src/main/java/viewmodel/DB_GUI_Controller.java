@@ -18,19 +18,30 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import model.Major;
 import model.Person;
+import service.CSVService;
 import service.MyLogger;
+import service.PDFReportService;
 
 import java.io.File;
 import java.net.URL;
-import java.time.LocalDate;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.regex.Pattern;
 
 public class DB_GUI_Controller implements Initializable {
 
     @FXML
-    TextField first_name, last_name, department, major, email, imageURL;
+    private ComboBox<Major> majorCombo;
+    @FXML
+    Label statusLabel;
+    @FXML
+    TextField first_name, last_name, department, email, imageURL;
+    @FXML
+    private Button addButton, editButton, deleteButton;
+    @FXML
+    private MenuItem editItem, deleteItem;
     @FXML
     ImageView img_view;
     @FXML
@@ -43,6 +54,8 @@ public class DB_GUI_Controller implements Initializable {
     private TableColumn<Person, String> tv_fn, tv_ln, tv_department, tv_major, tv_email;
     private final DbConnectivityClass cnUtil = new DbConnectivityClass();
     private final ObservableList<Person> data = cnUtil.getData();
+    private final CSVService csvService = new CSVService();
+    private final PDFReportService pdfService = new PDFReportService();
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -54,22 +67,88 @@ public class DB_GUI_Controller implements Initializable {
             tv_major.setCellValueFactory(new PropertyValueFactory<>("major"));
             tv_email.setCellValueFactory(new PropertyValueFactory<>("email"));
             tv.setItems(data);
+
+            majorCombo.setItems(FXCollections.observableArrayList(Major.values()));
+            majorCombo.getSelectionModel().selectFirst();
+
+            editItem.disableProperty().bind(tv.getSelectionModel().selectedItemProperty().isNull());
+            deleteItem.disableProperty().bind(tv.getSelectionModel().selectedItemProperty().isNull());
+
+            editButton.disableProperty().bind(tv.getSelectionModel().selectedItemProperty().isNull());
+            deleteButton.disableProperty().bind(tv.getSelectionModel().selectedItemProperty().isNull());
+            addButton.disableProperty().bind(
+                    first_name.textProperty().isEmpty()
+                            .or(last_name.textProperty().isEmpty())
+                            .or(email.textProperty().isEmpty())
+                    );
+
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
+
     @FXML
     protected void addNewRecord() {
+        if (!isValidForm()) {
+            showStatus("Invalid input.");
+            return;
+        }
+        Person p = new Person(
+                first_name.getText(),
+                last_name.getText(),
+                department.getText(),
+                majorCombo.getValue(),
+                email.getText(),
+                imageURL.getText()
+        );
+        cnUtil.insertUser(p);
+        p.setId(cnUtil.retrieveId(p));
+        data.add(p);
 
-            Person p = new Person(first_name.getText(), last_name.getText(), department.getText(),
-                    major.getText(), email.getText(), imageURL.getText());
-            cnUtil.insertUser(p);
-            cnUtil.retrieveId(p);
-            p.setId(cnUtil.retrieveId(p));
-            data.add(p);
-            clearForm();
+        showStatus("User has been added.");
+        clearForm();
 
+    }
+
+    @FXML
+    private void showStatus(String message) {
+        statusLabel.setText(message);
+    }
+
+    @FXML
+    public void exportCSV(){
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Export CSV");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV", "*.csv"));
+        File file = fc.showSaveDialog(tv.getScene().getWindow());
+        if (file != null) {
+            csvService.exportToCSV(file, data);
+            showStatus("Data exported.");
+        }
+    }
+    @FXML
+    public void importCSV(){
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Import CSV");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV", "*.csv"));
+        File file = fc.showOpenDialog(tv.getScene().getWindow());
+        if (file != null) {
+            data.addAll(csvService.importFromCSV(file));
+            showStatus("Data imported.");
+        }
+    }
+
+    @FXML
+    public void generatePDFReport(){
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Generate Report");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+        File file = fc.showSaveDialog(tv.getScene().getWindow());
+        if (file != null) {
+            pdfService.generateReport(file, data);
+            showStatus("PDF Report generated.");
+        }
     }
 
     @FXML
@@ -77,7 +156,7 @@ public class DB_GUI_Controller implements Initializable {
         first_name.setText("");
         last_name.setText("");
         department.setText("");
-        major.setText("");
+        majorCombo.getSelectionModel().clearSelection();
         email.setText("");
         imageURL.setText("");
     }
@@ -119,11 +198,12 @@ public class DB_GUI_Controller implements Initializable {
         Person p = tv.getSelectionModel().getSelectedItem();
         int index = data.indexOf(p);
         Person p2 = new Person(index + 1, first_name.getText(), last_name.getText(), department.getText(),
-                major.getText(), email.getText(),  imageURL.getText());
+                majorCombo.getValue(), email.getText(), imageURL.getText());
         cnUtil.editUser(p.getId(), p2);
         data.remove(p);
         data.add(index, p2);
         tv.getSelectionModel().select(index);
+        showStatus("User has been updated.");
     }
 
     @FXML
@@ -133,6 +213,7 @@ public class DB_GUI_Controller implements Initializable {
         cnUtil.deleteRecord(p);
         data.remove(index);
         tv.getSelectionModel().select(index);
+        statusLabel.setText("User has been deleted.");
     }
 
     @FXML
@@ -154,7 +235,7 @@ public class DB_GUI_Controller implements Initializable {
         first_name.setText(p.getFirstName());
         last_name.setText(p.getLastName());
         department.setText(p.getDepartment());
-        major.setText(p.getMajor());
+        majorCombo.setValue(p.getMajor());
         email.setText(p.getEmail());
         imageURL.setText(p.getImageURL());
     }
@@ -198,7 +279,7 @@ public class DB_GUI_Controller implements Initializable {
                 FXCollections.observableArrayList(Major.values());
         ComboBox<Major> comboBox = new ComboBox<>(options);
         comboBox.getSelectionModel().selectFirst();
-        dialogPane.setContent(new VBox(8, textField1, textField2,textField3, comboBox));
+        dialogPane.setContent(new VBox(8, textField1, textField2, textField3, comboBox));
         Platform.runLater(textField1::requestFocus);
         dialog.setResultConverter((ButtonType button) -> {
             if (button == ButtonType.OK) {
@@ -214,7 +295,34 @@ public class DB_GUI_Controller implements Initializable {
         });
     }
 
-    private static enum Major {Business, CSC, CPIS}
+    private boolean isValidForm() {
+        return validateName(first_name.getText())
+                && validateName(last_name.getText())
+                && validateDepartment(department.getText())
+                && validateEmail(email.getText())
+                && validateImageURL(imageURL.getText());
+    }
+
+    private boolean validateName(String name) {
+        Pattern pattern = Pattern.compile("^[A-Z][a-zA-Z]{1,49}$");
+        return pattern.matcher(name).matches();
+    }
+
+    private boolean validateDepartment(String department) {
+        Pattern pattern = Pattern.compile("^[A-Za-z ]{2,50}$");
+        return pattern.matcher(department).matches();
+    }
+
+    private boolean validateEmail(String email) {
+        Pattern pattern = Pattern.compile("(\\w+)@farmingdale\\.edu");
+        return pattern.matcher(email).matches();
+    }
+
+    private boolean validateImageURL(String imageURL) {
+        Pattern pattern = Pattern.compile("^(https?://).+\\.(png|jpg|gif)$)");
+        return pattern.matcher(imageURL).matches();
+    }
+
 
     private static class Results {
 

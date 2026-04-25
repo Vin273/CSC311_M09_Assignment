@@ -3,7 +3,7 @@ package viewmodel;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 
-public class SpalshScreenController {
+public class SplashScreenController {
     @FXML
     private Label welcomeText;
 
